@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StudyDesk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <div class="title">StudyDesk</div>
+      <nav><button id="themeBtn" class="btn">Dark mode</button></nav>
+    </header>
+
+    <div class="content-area">
+      <!-- LEFT: tabs + export -->
+      <aside class="sidebar left-sidebar">
+        <h3>Study material</h3>
+        <div class="tabs">
+          <button class="tab active" data-tab="summary">Summary</button>
+          <button class="tab" data-tab="quiz">Quiz</button>
+          <button class="tab" data-tab="flashcards">Flashcards</button>
+        </div>
+        <h3>Export</h3>
+        <button id="copyBtn" class="btn">Copy summary</button>
+        <button id="downloadBtn" class="btn">Download summary</button>
+      </aside>
+
+      <!-- MIDDLE: notes box + results box -->
+      <main>
+        <div class="box">
+          <h3>Your notes</h3>
+          <textarea id="notes" placeholder="Paste notes or type a topic"></textarea>
+          <button id="generateBtn" class="btn main-btn">Generate</button>
+          <p id="message" hidden></p>
+        </div>
+
+        <div class="box">
+          <h3>Results</h3>
+          <p id="loader" hidden>The AI is working...</p>
+          <div id="summary" class="tab-content active">
+            <p>Your summary will appear here.</p>
+          </div>
+          <div id="quiz" class="tab-content">
+            <p>Your quiz will appear here.</p>
+          </div>
+          <div id="flashcards" class="tab-content">
+            <p>Your flashcards will appear here.</p>
+          </div>
+        </div>
+      </main>
+
+      <!-- RIGHT: settings + history -->
+      <aside class="sidebar right-sidebar">
+        <h3>Settings</h3>
+        <input id="apiKey" type="password" placeholder="Your API key">
+        <button id="saveKeyBtn" class="btn">Save key</button>
+        <h3>History</h3>
+        <ul id="historyList"></ul>
+        <button id="clearBtn" class="btn">Clear history</button>
+      </aside>
+    </div>
+
+    <footer>StudyDesk | Web Technology CA Assignment 5</footer>
+  </div>
+  <script src="script.js"></script>
+</body>
+
+</html>
