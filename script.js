@@ -1,25 +1,10 @@
 const $ = (id) => document.getElementById(id);   // shortcut for getElementById
 let current = null;                               // result currently shown
 
-// ---------- Fake data (Day 2 replaces this with the real AI reply) ----------
-const fake = {
-  summary: "Photosynthesis is how plants turn light into food. Chlorophyll in the chloroplasts absorbs sunlight and the plant converts carbon dioxide and water into glucose, releasing oxygen.",
-  quiz: [
-    { question: "Where does photosynthesis happen?", options: ["Nucleus", "Chloroplast", "Ribosome", "Vacuole"], answer: 1 },
-    { question: "Which gas do plants take in?", options: ["Oxygen", "Nitrogen", "Carbon dioxide", "Helium"], answer: 2 },
-    { question: "Which pigment absorbs sunlight?", options: ["Chlorophyll", "Melanin", "Keratin", "Insulin"], answer: 0 },
-    { question: "Which sugar is produced?", options: ["Lactose", "Glucose", "Maltose", "Sucrose"], answer: 1 },
-    { question: "Which gas is released?", options: ["Methane", "Hydrogen", "Oxygen", "Argon"], answer: 2 }
-  ],
-  flashcards: [
-    { front: "Chlorophyll", back: "Green pigment that absorbs sunlight" },
-    { front: "Chloroplast", back: "Where photosynthesis happens" },
-    { front: "Glucose", back: "Sugar the plant makes as food" },
-    { front: "Stomata", back: "Leaf pores for gas exchange" },
-    { front: "Inputs", back: "Carbon dioxide, water, light" },
-    { front: "Outputs", back: "Glucose and oxygen" }
-  ]
-};
+// ---------- Settings for the AI ----------
+// The app tries these models in order. If one is busy or missing, it moves to the next.
+const MODELS = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite"];
+const urlFor = (model) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
 // Builds an element. textContent is safe: AI text can never inject HTML.
 function el(tag, cls, text) {
@@ -56,6 +41,116 @@ function setLoading(on) {
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   document.querySelectorAll(".tab-content").forEach((c) => c.classList.toggle("active", c.id === name));
+}
+
+// ---------- 1) Build the instruction for the AI ----------
+function buildPrompt(notes) {
+  return `You are a study assistant. From the notes below, reply ONLY with valid JSON,
+no extra text, in exactly this format:
+{
+  "summary": "a short summary",
+  "quiz": [
+    { "question": "...", "options": ["A", "B", "C", "D"], "answer": 0 }
+  ],
+  "flashcards": [
+    { "front": "term", "back": "definition" }
+  ]
+}
+Rules: exactly 5 quiz questions, "answer" is the index (0 to 3) of the correct option,
+and 6 to 8 flashcards.
+
+Notes:
+${notes}`;
+}
+
+// ---------- 2) Send the request to the AI ----------
+// Makes an error and marks whether trying another model could help
+function fail(message, canRetry) {
+  const error = new Error(message);
+  error.canRetry = canRetry;
+  return error;
+}
+
+// Sends the request to ONE model
+async function requestModel(model, prompt, apiKey) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);   // give up after 60 seconds
+
+  let response;
+  try {
+    response = await fetch(urlFor(model), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json" }
+      }),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error.name === "AbortError") throw fail("The AI took too long. Try again.", true);
+    throw fail("Network error. Check your internet connection and try again.", false);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) {
+    const s = response.status;
+    if (s === 400 || s === 401 || s === 403)
+      throw fail("Your API key looks wrong or not allowed (error " + s + "). Check Settings.", false);
+    if (s === 404) throw fail("Model not found (404).", true);
+    if (s === 429) throw fail("Too many requests (429). Wait a minute and try again.", true);
+    throw fail("The AI server is busy (" + s + "). Try again in a minute.", true);
+  }
+
+  const data = await response.json();
+  console.log("Model used:", model, "| Full API response:", data);
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw fail("The AI sent an empty reply. Try again.", true);
+  return text;
+}
+
+// Tries each model in order until one works
+async function callAPI(prompt) {
+  const apiKey = localStorage.getItem("apiKey");
+  if (!apiKey) throw new Error("No API key. Add your key in Settings and click Save key.");
+
+  let lastError;
+  for (const model of MODELS) {
+    try {
+      return await requestModel(model, prompt, apiKey);
+    } catch (error) {
+      lastError = error;
+      if (!error.canRetry) throw error;   // wrong key or no internet: other models won't help
+    }
+  }
+  throw lastError;                        // every model failed
+}
+// ---------- 3) Turn the AI text into a checked object ----------
+function parseResponse(text) {
+  // Some models wrap JSON in ```json fences, so remove them first
+  const cleaned = text.replace(/```json|```/g, "").trim();
+
+  let result;
+  try {
+    result = JSON.parse(cleaned);
+  } catch {
+    throw new Error("The AI reply was not valid JSON. Click Generate again.");
+  }
+
+  // Validate: make sure everything we need exists
+  const quizOk = Array.isArray(result.quiz) && result.quiz.length > 0 &&
+    result.quiz.every((q) => q.question && Array.isArray(q.options) && Number.isInteger(q.answer) && q.options[q.answer] !== undefined);
+  const cardsOk = Array.isArray(result.flashcards) && result.flashcards.length > 0 &&
+    result.flashcards.every((c) => c.front && c.back);
+
+  if (typeof result.summary !== "string" || !result.summary || !quizOk || !cardsOk)
+    throw new Error("The AI reply was missing the summary, quiz or flashcards. Click Generate again.");
+
+  return result;
 }
 
 // ---------- Render functions ----------
@@ -152,21 +247,23 @@ function renderHistory() {
   });
 }
 
-// ---------- Main flow ----------
+// ---------- Main flow: runs when Generate is clicked ----------
 async function generate() {
   $("message").hidden = true;
   const notes = $("notes").value.trim();
   if (!notes) return showMsg("Please enter notes or a topic first.");
   setLoading(true);
   try {
-    await new Promise((r) => setTimeout(r, 1000));            // DAY 2: real API call goes here
-    renderAll(fake);
-    saveHistory(notes, fake);
+    const prompt = buildPrompt(notes);       // step 1
+    const text = await callAPI(prompt);      // step 2
+    const result = parseResponse(text);      // step 3
+    renderAll(result);
+    saveHistory(notes, result);
     showTab("summary");
   } catch (error) {
-    showMsg("Error: " + error.message);
+    showMsg(error.message);                  // shows our clear error message
   } finally {
-    setLoading(false);                                        // always runs
+    setLoading(false);                       // always runs
   }
 }
 

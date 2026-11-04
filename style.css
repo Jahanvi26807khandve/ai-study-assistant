@@ -291,3 +291,4 @@ ul button {
     flex-wrap: wrap;
   }
 }
+input[type="radio"] { width: auto; padding: 0; margin-right: 8px; }
